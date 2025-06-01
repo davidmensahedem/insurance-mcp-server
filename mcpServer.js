@@ -89,7 +89,39 @@ async function run() {
     const transports = {};
     const servers = {};
 
+    // Add Express middleware
+    app.use(express.json());
+    app.use(express.urlencoded({ extended: true }));
+
+    // Add CORS headers for development
+    app.use((req, res, next) => {
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+      next();
+    });
+
+    // Health check and root route
+    app.get("/", (req, res) => {
+      res.json({
+        name: SERVER_NAME,
+        version: "0.1.0",
+        status: "running",
+        endpoints: {
+          sse: "/sse",
+          messages: "/messages",
+          health: "/health"
+        }
+      });
+    });
+
+    app.get("/health", (req, res) => {
+      res.json({ status: "healthy", timestamp: new Date().toISOString() });
+    });
+
     app.get("/sse", async (_req, res) => {
+      console.log("[SSE] New SSE connection requested");
+
       // Create a new Server instance for each session
       const server = new Server(
         {
@@ -110,6 +142,7 @@ async function run() {
       servers[transport.sessionId] = server;
 
       res.on("close", async () => {
+        console.log("[SSE] Connection closed for session:", transport.sessionId);
         delete transports[transport.sessionId];
         await server.close();
         delete servers[transport.sessionId];
@@ -131,8 +164,12 @@ async function run() {
     });
 
     const port = process.env.PORT || 3001;
-    app.listen(port, () => {
-      console.log(`[SSE Server] running on port ${port}`);
+    const host = process.env.HOST || "0.0.0.0";
+
+    app.listen(port, host, () => {
+      console.log(`[SSE Server] running on ${host}:${port}`);
+      console.log(`[SSE Server] Health check available at http://${host}:${port}/health`);
+      console.log(`[SSE Server] SSE endpoint available at http://${host}:${port}/sse`);
     });
   } else {
     // stdio mode: single server instance
