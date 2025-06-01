@@ -136,15 +136,6 @@ async function run() {
       app.get("/sse", async (req, res) => {
         console.log("[SSE] New SSE connection requested");
 
-        // Set proper SSE headers BEFORE creating transport
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Cache-Control'
-        });
-
         // Create a new Server instance for each session
         const server = new Server(
           {
