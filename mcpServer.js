@@ -103,9 +103,24 @@ async function run() {
       const transports = {};
       const servers = {};
 
-      // Add Express middleware
-      app.use(express.json());
-      app.use(express.urlencoded({ extended: true }));
+      // Add Express middleware (but exclude /messages from body parsing)
+      app.use((req, res, next) => {
+        if (req.path === '/messages') {
+          // Skip body parsing for /messages endpoint - MCP SDK handles this
+          next();
+        } else {
+          express.json()(req, res, next);
+        }
+      });
+
+      app.use((req, res, next) => {
+        if (req.path === '/messages') {
+          // Skip body parsing for /messages endpoint - MCP SDK handles this
+          next();
+        } else {
+          express.urlencoded({ extended: true })(req, res, next);
+        }
+      });
 
       // Add CORS headers for development
       app.use((req, res, next) => {
