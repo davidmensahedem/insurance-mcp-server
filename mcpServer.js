@@ -19,7 +19,14 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config({ path: path.resolve(__dirname, ".env") });
+console.log("[STARTUP] Starting MCP Server...");
+
+try {
+  dotenv.config({ path: path.resolve(__dirname, ".env") });
+  console.log("[STARTUP] Environment variables loaded");
+} catch (error) {
+  console.error("[STARTUP ERROR] Failed to load environment variables:", error);
+}
 
 const SERVER_NAME = "insurance-mcp-server";
 
@@ -80,58 +87,117 @@ async function setupServerHandlers(server, tools) {
 }
 
 async function run() {
-  const args = process.argv.slice(2);
-  const isSSE = args.includes("--sse");
-  const tools = await discoverTools();
+  try {
+    console.log("[STARTUP] Parsing command line arguments...");
+    const args = process.argv.slice(2);
+    const isSSE = args.includes("--sse");
+    console.log("[STARTUP] SSE Mode:", isSSE);
 
-  if (isSSE) {
-    const app = express();
-    const transports = {};
-    const servers = {};
+    console.log("[STARTUP] Discovering tools...");
+    const tools = await discoverTools();
+    console.log("[STARTUP] Found", tools.length, "tools");
 
-    // Add Express middleware
-    app.use(express.json());
-    app.use(express.urlencoded({ extended: true }));
+    if (isSSE) {
+      console.log("[STARTUP] Starting SSE server...");
+      const app = express();
+      const transports = {};
+      const servers = {};
 
-    // Add CORS headers for development
-    app.use((req, res, next) => {
-      res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-      next();
-    });
+      // Add Express middleware
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: true }));
 
-    // Health check and root route
-    app.get("/", (req, res) => {
-      res.json({
-        name: SERVER_NAME,
-        version: "0.1.0",
-        status: "running",
-        endpoints: {
-          sse: "/sse",
-          messages: "/messages",
-          health: "/health"
+      // Add CORS headers for development
+      app.use((req, res, next) => {
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+        next();
+      });
+
+      // Health check and root route
+      app.get("/", (req, res) => {
+        res.json({
+          name: SERVER_NAME,
+          version: "0.1.0",
+          status: "running",
+          endpoints: {
+            sse: "/sse",
+            messages: "/messages",
+            health: "/health"
+          }
+        });
+      });
+
+      app.get("/health", (req, res) => {
+        res.json({ status: "healthy", timestamp: new Date().toISOString() });
+      });
+
+      app.get("/sse", async (req, res) => {
+        console.log("[SSE] New SSE connection requested");
+
+        // Set proper SSE headers BEFORE creating transport
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Cache-Control'
+        });
+
+        // Create a new Server instance for each session
+        const server = new Server(
+          {
+            name: SERVER_NAME,
+            version: "0.1.0",
+          },
+          {
+            capabilities: {
+              tools: {},
+            },
+          }
+        );
+        server.onerror = (error) => console.error("[Error]", error);
+        await setupServerHandlers(server, tools);
+
+        const transport = new SSEServerTransport("/messages", res);
+        transports[transport.sessionId] = transport;
+        servers[transport.sessionId] = server;
+
+        res.on("close", async () => {
+          console.log("[SSE] Connection closed for session:", transport.sessionId);
+          delete transports[transport.sessionId];
+          await server.close();
+          delete servers[transport.sessionId];
+        });
+
+        await server.connect(transport);
+      });
+
+      app.post("/messages", async (req, res) => {
+        const sessionId = req.query.sessionId;
+        const transport = transports[sessionId];
+        const server = servers[sessionId];
+
+        if (transport && server) {
+          await transport.handlePostMessage(req, res);
+        } else {
+          res.status(400).send("No transport/server found for sessionId");
         }
       });
-    });
 
-    app.get("/health", (req, res) => {
-      res.json({ status: "healthy", timestamp: new Date().toISOString() });
-    });
+      const port = process.env.PORT || 3001;
+      const host = process.env.HOST || "0.0.0.0";
 
-    app.get("/sse", async (req, res) => {
-      console.log("[SSE] New SSE connection requested");
-
-      // Set proper SSE headers BEFORE creating transport
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Cache-Control'
+      console.log("[STARTUP] Starting Express server on", host + ":" + port);
+      app.listen(port, host, () => {
+        console.log(`[SSE Server] running on ${host}:${port}`);
+        console.log(`[SSE Server] Health check available at http://${host}:${port}/health`);
+        console.log(`[SSE Server] SSE endpoint available at http://${host}:${port}/sse`);
       });
-
-      // Create a new Server instance for each session
+    } else {
+      console.log("[STARTUP] Starting STDIO server...");
+      // stdio mode: single server instance
       const server = new Server(
         {
           name: SERVER_NAME,
@@ -146,64 +212,34 @@ async function run() {
       server.onerror = (error) => console.error("[Error]", error);
       await setupServerHandlers(server, tools);
 
-      const transport = new SSEServerTransport("/messages", res);
-      transports[transport.sessionId] = transport;
-      servers[transport.sessionId] = server;
-
-      res.on("close", async () => {
-        console.log("[SSE] Connection closed for session:", transport.sessionId);
-        delete transports[transport.sessionId];
+      process.on("SIGINT", async () => {
         await server.close();
-        delete servers[transport.sessionId];
+        process.exit(0);
       });
 
+      const transport = new StdioServerTransport();
       await server.connect(transport);
-    });
-
-    app.post("/messages", async (req, res) => {
-      const sessionId = req.query.sessionId;
-      const transport = transports[sessionId];
-      const server = servers[sessionId];
-
-      if (transport && server) {
-        await transport.handlePostMessage(req, res);
-      } else {
-        res.status(400).send("No transport/server found for sessionId");
-      }
-    });
-
-    const port = process.env.PORT || 3001;
-    const host = process.env.HOST || "0.0.0.0";
-
-    app.listen(port, host, () => {
-      console.log(`[SSE Server] running on ${host}:${port}`);
-      console.log(`[SSE Server] Health check available at http://${host}:${port}/health`);
-      console.log(`[SSE Server] SSE endpoint available at http://${host}:${port}/sse`);
-    });
-  } else {
-    // stdio mode: single server instance
-    const server = new Server(
-      {
-        name: SERVER_NAME,
-        version: "0.1.0",
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
-    server.onerror = (error) => console.error("[Error]", error);
-    await setupServerHandlers(server, tools);
-
-    process.on("SIGINT", async () => {
-      await server.close();
-      process.exit(0);
-    });
-
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+    }
+  } catch (error) {
+    console.error("[STARTUP ERROR] Fatal error during startup:", error);
+    console.error("[STARTUP ERROR] Stack trace:", error.stack);
+    process.exit(1);
   }
 }
 
-run().catch(console.error);
+// Add global error handlers
+process.on('uncaughtException', (error) => {
+  console.error('[UNCAUGHT EXCEPTION]', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[UNHANDLED REJECTION] At:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+console.log("[STARTUP] Calling run function...");
+run().catch((error) => {
+  console.error("[STARTUP ERROR] Run function failed:", error);
+  process.exit(1);
+});
