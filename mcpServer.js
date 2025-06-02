@@ -125,15 +125,8 @@ async function run() {
 
       // CORS configuration
       app.use(cors({
-        origin: [
-          'http://localhost:3006',
-          'http://localhost:3000',
-          'https://e4kcws8w8488cgk0scsko44w.207.180.196.252.sslip.io',
-          'http://e4kcws8w8488cgk0scsko44w.207.180.196.252.sslip.io'
-        ],
-        credentials: true,
-        methods: ['GET', 'POST', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+        origin: "*",
+        credentials: false,
       }));
 
       // Health check and root route
