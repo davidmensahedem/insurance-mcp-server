@@ -134,7 +134,14 @@ async function run() {
         ],
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: '*'  // Allow all headers
+        allowedHeaders: [
+          'Content-Type',
+          'Authorization',
+          'Origin',
+          'X-Requested-With',
+          'Accept',
+          'Cache-Control'
+        ]
       }));
 
       // Health check and root route
