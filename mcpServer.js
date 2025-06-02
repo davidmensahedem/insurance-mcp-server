@@ -128,11 +128,13 @@ async function run() {
         origin: [
           'http://localhost:3000',
           'http://localhost:3006',
-          'http://e4kcws8w8488cgk0scsko44w.207.180.196.252.sslip.io',  // Your client URL
-          'https://e4kcws8w8488cgk0scsko44w.207.180.196.252.sslip.io'   // HTTPS version
+          'http://207.180.196.252:3000',
+          'http://e4kcws8w8488cgk0scsko44w.207.180.196.252.sslip.io',
+          'https://e4kcws8w8488cgk0scsko44w.207.180.196.252.sslip.io'
         ],
         credentials: true,
-        allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: '*'  // Allow all headers
       }));
 
       // Health check and root route
