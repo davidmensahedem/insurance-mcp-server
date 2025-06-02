@@ -9,6 +9,7 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
+import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { discoverTools } from "./lib/tools.js";
@@ -122,13 +123,17 @@ async function run() {
         }
       });
 
-      // Add CORS headers for development
-      app.use((req, res, next) => {
-        res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-        next();
-      });
+      // CORS configuration
+      app.use(cors({
+        origin: [
+          'http://localhost:3006',
+          'https://e4kcws8w8488cgk0scsko44w.207.180.196.252.sslip.io',
+          'http://e4kcws8w8488cgk0scsko44w.207.180.196.252.sslip.io'
+        ],
+        credentials: true,
+        methods: ['GET', 'POST', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+      }));
 
       // Health check and root route
       app.get("/", (req, res) => {
